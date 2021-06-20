@@ -1,0 +1,365 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+library(ggplot2)
+library(tidyquant)
+library(quantmod)
+library(purrr)
+library(uwot)
+library(dplyr)
+library(tidyr)
+library(ggrepel)
+library(bizdays)
+```
+
+```{r}
+options("getSymbols.warning4.0"=FALSE)
+options("getSymbols.yahoo.warning"=FALSE)
+# Downloading Apple price using quantmod
+
+getSymbols("AAPL", from = '2017-01-01',
+           to = "2018-03-01",warnings = FALSE,
+           auto.assign = TRUE)
+```
+
+```{r}
+chart_Series(AAPL)
+```
+```{r}
+tickers = c("AAPL", "NFLX", "AMZN", "K", "O")
+
+getSymbols(tickers,
+           from = "2017-01-01",
+           to = "2017-01-15")
+```
+
+```{r}
+prices <- map(tickers,function(x) Ad(get(x)))
+prices <- reduce(prices,merge)
+colnames(prices) <- tickers
+```
+
+```{r}
+head(prices)
+```
+
+```{r}
+aapl <- tq_get('AAPL',
+               from = "2017-01-01",
+               to = "2018-03-01",
+               get = "stock.prices")
+```
+
+```{r}
+head(aapl)
+```
+
+```{r}
+snp <- tq_index('SP500', use_fallback = FALSE)
+head(snp)
+```
+
+
+```{r}
+meme_stonks = c('AMC', 'GME' ,'BB', 'NOK', 'MVIS', 'RKT', 'UWMC', 'CLOV', 'CLNE', 'WKHS', 'ASO', 'PLTR') 
+
+prices <- tq_get(meme_stonks,
+                 from = "2019-01-01",
+                 to = "2021-06-18",
+                 get = "stock.prices")
+```
+
+```{r}
+prices %>%
+  group_by(symbol) %>%
+  slice(1)
+```
+
+```{r}
+prices %>%
+  ggplot(aes(x = date, y = adjusted, color = symbol)) +
+  geom_line()
+```
+```{r}
+tickers <- c(meme_stonks, snp$symbol[c(1:50, 252:277, 455:505)]) %>% unique
+
+prices <- tq_get(tickers,
+                 from = "2021-01-01",
+                 to = "2021-06-18",
+                 get = "stock.prices")
+
+OBV <- prices %>% tq_mutate_xy(x = adjusted, y = volume, mutate_fun = OBV)
+
+#prices <- right_join(prices, OBV, by = 'date') 
+```
+
+```{r}
+prices %>%
+  ggplot(aes(x = date, y = adjusted, color = symbol)) +
+  geom_line()
+```
+
+```{r}
+stock_mat <- OBV %>% select(symbol, date, obv) %>% pivot_wider(names_from = date, values_from = obv) %>% as.data.frame()
+rownames(stock_mat) <- stock_mat$symbol
+stock_mat <- stock_mat[,-1]
+stock_mat <- stock_mat[!is.na(stock_mat[[1]]),]
+```
+
+```{r}
+stock_mat_scaled <- stock_mat %>% t() %>% scale() %>% t()
+pca <- prcomp(stock_mat, center = FALSE, scale = FALSE)
+```
+
+
+
+```{r}
+df <- pca$x %>% as.data.frame()
+df$symbol <- rownames(df)
+ggplot(df, mapping = aes(x = PC1, y = PC2, label = symbol)) + geom_point() + geom_text_repel(max.overlaps = 20)
+```
+
+```{r}
+df <- pca[["rotation"]] %>% as.data.frame()
+df$symbol <- rownames(df)
+ggplot(df, mapping = aes(x = PC1, y = PC2, label = symbol)) + geom_point() + geom_text_repel(max.overlaps = 20)
+```
+
+
+
+```{r}
+library(uwot)
+stocks_umap <- umap(stock_mat) %>% as.data.frame()
+stocks_umap$symbol <- rownames(stock_mat)
+ggplot(stocks_umap, mapping = aes(x = V1, y = V2, label = symbol)) + geom_point() + geom_text_repel(max.overlaps = 20)
+```
+
+```{r}
+stocks_date_umap <- umap(pca[["rotation"]]) %>% as.data.frame()
+stocks_date_umap$date <- rownames(pca[["rotation"]])
+ggplot(stocks_date_umap, mapping = aes(x = V1, y = V2, label = date)) + geom_point() + geom_text_repel(max.overlaps = 20)
+```
+
+
+
+```{r}
+library(ComplexHeatmap)
+
+interesting_tickers = c('CLOV', 'UWMC', 'BB', 'NOK', 'AMC', 'CLNE' ,'MVIS', 'GME' , 'AAPL', 'JPM', 'QCOM', 'AVGO', 'NFLX', 'NVDA', 'GOOG', 'KO' ,'CSCO', 'DISCA', 'INTC', 'SYF')
+
+ha = rowAnnotation(foo = anno_mark(at = which(rownames(stock_mat_scaled) %in% interesting_tickers), labels = intersect(rownames(stock_mat_scaled), interesting_tickers)))
+
+Heatmap(stock_mat_scaled, 
+        right_annotation = ha,
+        cluster_columns = FALSE, 
+        show_column_names = FALSE, 
+        show_row_names = TRUE,
+        row_names_gp = gpar(fontsize = 4))
+```
+
+
+```{r}
+prices <- tq_get(meme_stonks,
+                 from = "2021-01-01",
+                 to = "2021-06-18",
+                 get = "stock.prices")
+
+stonk_mat <- prices %>% select(symbol, date, adjusted) %>% pivot_wider(names_from = date, values_from = adjusted) %>% as.data.frame()
+rownames(stonk_mat) <- stonk_mat$symbol
+stonk_mat <- stonk_mat[,-1]
+stonk_mat <- stonk_mat[!is.na(stonk_mat[[1]]),]
+
+
+
+stock_mat_scaled <- stonk_mat %>% t() %>% scale() %>% t()
+pca <- prcomp(stonk_mat, center = FALSE, scale = FALSE)
+```
+
+
+```{r}
+df <- pca$x %>% as.data.frame()
+df$symbol <- rownames(df)
+ggplot(df, mapping = aes(x = PC1, y = PC2, label = symbol)) + geom_point() + geom_text_repel(max.overlaps = 20)
+```
+```{r}
+df <- pca[["rotation"]] %>% as.data.frame()
+df$symbol <- rownames(df)
+ggplot(df, mapping = aes(x = PC1, y = PC2, label = symbol)) + geom_point() + geom_text_repel(max.overlaps = 20)
+```
+
+```{r}
+library(uwot)
+stonks_umap <- umap(stonk_mat, n_neighbors = 4) %>% as.data.frame()
+stonks_umap$symbol <- rownames(stonk_mat)
+ggplot(stonks_umap, mapping = aes(x = V1, y = V2, label = symbol)) + geom_point() + geom_text_repel(max.overlaps = 20)
+```
+
+```{r}
+stonk_date_umap <- umap(pca[["rotation"]]) %>% as.data.frame()
+stonk_date_umap$date <- rownames(pca[["rotation"]])
+ggplot(stonk_date_umap, mapping = aes(x = V1, y = V2, label = date)) + geom_point() + geom_text_repel(max.overlaps = 20)
+```
+
+```{r}
+gme_data <- tq_get('GME',
+                 from = "2020-01-01",
+                 to = "2021-06-18",
+                 get = "stock.prices")
+```
+
+
+```{r}
+gme_data %>%
+  ggplot(aes(x = date, y = adjusted, color = symbol)) +
+  geom_line()
+```
+
+```{r}
+gme_mat <- gme_data %>% select (open, high, low, close, volume, adjusted) %>% as.data.frame()
+rownames(gme_mat) <- gme_data$date
+
+pca <- prcomp(gme_mat, center = FALSE, scale = FALSE)
+```
+
+
+```{r}
+df <- pca$x %>% as.data.frame()
+df$date <- rownames(df)
+ggplot(df, mapping = aes(x = PC1, y = PC2, label = date)) + geom_point() + geom_text_repel(max.overlaps = 20)
+```
+```{r}
+gme_umap <- umap(gme_mat, n_neighbors = 5) %>% as.data.frame()
+gme_umap$date <- rownames(gme_mat)
+ggplot(gme_umap, mapping = aes(x = V1, y = V2, label = date)) + geom_point() + geom_text_repel(max.overlaps = 20)
+```
+
+```{r}
+res <- nmf(gme_mat, 4)
+```
+
+```{r}
+basismap(res)
+coefmap(res)
+```
+
+
+```{r}
+gme_data <- tq_get('GME',
+                 from = "2020-01-01",
+                 to = "2021-06-18",
+                 get = "stock.prices") 
+
+MACD <- gme_data %>% tq_transmute(adjusted, mutate_fun = MACD)
+OBV <- gme_data %>% tq_transmute_xy(x = adjusted, y = volume, mutate_fun = OBV)
+
+VWAP <- gme_data %>% tq_transmute_xy(x = adjusted, y = volume,mutate_fun = VWAP)
+volatility <- gme_data %>% tq_transmute(
+                 mutate_fun = volatility)
+```
+
+```{r}
+#generate monthlies and weeklies
+library(lubridate)
+library(dplyr)
+allDates = seq(from = as.Date("2020-01-01"), to = as.Date("2021-06-18"), by = "days")
+df = data.frame(allDates)
+df$Date = weekdays(df$allDates)
+
+monthlies <- df %>% 
+  filter(Date == 'Friday') %>% 
+  mutate(month=month(allDates),
+         year=year(allDates)) %>% 
+  group_by(year,month) %>% 
+  summarise(col=nth(allDates,3))
+
+weeklies <- df %>% 
+  filter(Date == 'Friday') %>% 
+  mutate(month=month(allDates),
+         year=year(allDates)) 
+
+#generate metadata for dates
+date_metadata <- data.frame(date = gme_data$date)
+date_metadata$options <- ' '
+
+#create a calendar to calculate the t+35 calendar days
+date_metadata$`T+` <- ' '
+trading_holidays <- c('2020-01-01', '2020-01-20', '2020-02-17', '2020-04-10', '2020-05-25', '2020-07-03', '2020-09-07', '2020-11-26', '2020-12-25',  '2021-01-01', '2021-01-18', '2021-02-15', '2021-04-02', '2021-05-31')
+
+cal <- create.calendar(name = "example1", start.date = "2020-01-01",  weekdays = ,end.date = "2021-12-31", holidays = trading_holidays, financial = FALSE)
+date_metadata$`T+`[date_metadata$date %in% offset(monthlies$col, 38, cal)] <- 'T+35'
+
+weekly_expiry <- weeklies$allDates[!(weeklies$allDates %in% as.Date(trading_holidays))] 
+
+date_metadata$options[date_metadata$date %in% weekly_expiry]<- 'weekly'
+thursday_expiry <-  offset(weeklies$allDates[weeklies$allDates %in% as.Date(trading_holidays)],-1.,cal)
+date_metadata$options[date_metadata$date %in% thursday_expiry]<- 'weekly'
+
+#add monthly option expiration
+date_metadata$options[date_metadata$date %in% monthlies$col] <- 'monthly'
+monthly_index = which(date_metadata$options == 'monthly') 
+monthly_index = monthly_index[-length(monthly_index)]
+date_metadata$`T+`[monthly_index + 22] <- 'T+21'
+
+date_metadata$date <- date_metadata$date %>% as.character()
+```
+
+
+```{r}
+gme_data <- right_join(gme_data, MACD, by = 'date') %>% 
+  right_join(OBV, by = 'date') %>% 
+  right_join(VWAP, by = 'date') %>%
+  right_join(volatility, by = 'date')
+
+gme_data <- gme_data %>% dplyr::rename(volatility = 'value')
+```
+
+```{r}
+gme_mat <- gme_data %>% select (open, high, low, close, volume, adjusted, signal, obv, VWAP, volatility) %>% as.data.frame()
+rownames(gme_mat) <- gme_data$date
+gme_mat <- gme_mat[!is.na(gme_mat$signal),]
+
+pca <- prcomp(gme_mat, center = FALSE, scale = FALSE)
+
+df <- pca$x %>% as.data.frame()
+df$date <- rownames(df)
+df <- df %>% right_join(date_metadata, by = 'date')
+ggplot(df, mapping = aes(x = PC1, y = PC2, label = date, color = `T+`)) + geom_point() + geom_text_repel(data = subset(df, `T+` == 'T+21' | `T+` == 'T+35') ,max.overlaps = 40) + scale_color_manual(values = c('black', 'blue', 'red'))
+```
+
+```{r}
+# capture the rotation matrix in a data frame
+rotation_data <- data.frame(pca$rotation, variable=row.names(pca$rotation))
+# define a pleasing arrow style
+arrow_style <- arrow(length = unit(0.05, "inches"),
+                     type = "closed")
+# now plot, using geom_segment() for arrows and geom_text for labels
+ggplot(rotation_data) + 
+  geom_segment(aes(xend=PC1, yend=PC2), x=0, y=0, arrow=arrow_style) + 
+  geom_text(aes(x=PC1, y=PC2, label=variable), hjust=0, size=3, color='blue') + 
+  xlim(-1.,1.25) + 
+  ylim(-1.,1.) +
+  coord_fixed() # fix aspect ratio to 1:1
+
+
+ggplot(rotation_data) + 
+  geom_segment(aes(xend=PC2, yend=PC3), x=0, y=0, arrow=arrow_style) + 
+  geom_text(aes(x=PC2, y=PC3, label=variable), hjust=0, size=3, color='blue') + 
+  xlim(-1.,1.25) + 
+  ylim(-1.,1.) +
+  coord_fixed() # fix aspect ratio to 1:1
+```
+
+```{r}
+gme_umap <- umap(gme_mat, n_neighbors = 5) %>% as.data.frame()
+gme_umap$date <- rownames(gme_mat)
+gme_umap <- gme_umap %>% right_join(date_metadata, by = 'date')
+
+ggplot(gme_umap, mapping = aes(x = V1, y = V2, label = date, color = `T+`)) + geom_point() + geom_text_repel(data = subset(gme_umap, `T+` == 'T+21' | `T+` == 'T+35') ,max.overlaps = 40) + scale_color_manual(values = c('black', 'blue', 'red'))
+```
